@@ -107,6 +107,33 @@ class TestRefreshToken:
         )
         assert response.status_code == 401
 
+    def test_refresh_returns_new_refresh_token(self, client, auth_tokens):
+        response = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": auth_tokens["refresh_token"]}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "refresh_token" in data
+        assert data["refresh_token"] != auth_tokens["refresh_token"]
+
+    def test_continuous_refresh(self, client, auth_tokens):
+        first_response = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": auth_tokens["refresh_token"]}
+        )
+        assert first_response.status_code == 200
+        first_data = first_response.json()
+
+        second_response = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": first_data["refresh_token"]}
+        )
+        assert second_response.status_code == 200
+        second_data = second_response.json()
+        assert "access_token" in second_data
+        assert "refresh_token" in second_data
+
 
 class TestGetMe:
     def test_get_me_success(self, client, auth_tokens, test_user_data):
