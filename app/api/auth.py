@@ -114,7 +114,7 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     access_token = create_access_token(user.id)
     db.commit()
 
-    return TokenRefresh(access_token=access_token)
+    return TokenRefresh(access_token=access_token, refresh_token=new_refresh_token_value)
 
 
 @router.get("/me", response_model=UserResponse)
