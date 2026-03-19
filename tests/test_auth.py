@@ -193,3 +193,48 @@ class TestPasswordHashing:
         assert user is not None
         assert user.hashed_password != test_user_data["password"]
         assert user.hashed_password.startswith("$2b$")
+
+    def test_verify_password_correct(self):
+        from app.core.security import get_password_hash, verify_password
+        password = "mysecurepassword123"
+        hashed = get_password_hash(password)
+        assert verify_password(password, hashed) is True
+
+    def test_verify_password_incorrect(self):
+        from app.core.security import get_password_hash, verify_password
+        password = "mysecurepassword123"
+        wrong_password = "wrongpassword456"
+        hashed = get_password_hash(password)
+        assert verify_password(wrong_password, hashed) is False
+
+    def test_password_hash_uses_salt(self):
+        from app.core.security import get_password_hash
+        password = "samepassword123"
+        hash1 = get_password_hash(password)
+        hash2 = get_password_hash(password)
+        assert hash1 != hash2
+
+    def test_bcrypt_hash_format(self):
+        from app.core.security import get_password_hash
+        password = "testpassword"
+        hashed = get_password_hash(password)
+        assert hashed.startswith("$2b$")
+        assert len(hashed) == 60
+
+    def test_login_verifies_hashed_password(self, client, test_user_data, registered_user):
+        login_data = {
+            "email": test_user_data["email"],
+            "password": test_user_data["password"]
+        }
+        response = client.post("/api/auth/login", json=login_data)
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+
+    def test_login_fails_with_wrong_password(self, client, test_user_data, registered_user):
+        login_data = {
+            "email": test_user_data["email"],
+            "password": "wrongpassword123"
+        }
+        response = client.post("/api/auth/login", json=login_data)
+        assert response.status_code == 401
+        assert "Invalid credentials" in response.json()["detail"]
