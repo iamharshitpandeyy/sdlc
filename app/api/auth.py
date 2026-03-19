@@ -1,4 +1,12 @@
+"""
+Authentication API endpoints.
+
+This module provides REST API endpoints for user authentication including
+registration, login, logout, token refresh, and user profile retrieval.
+"""
+
 from datetime import datetime, timedelta
+from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -20,8 +28,28 @@ from app.core.dependencies import get_current_user
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+    responses={
+        201: {"description": "User successfully created"},
+        409: {"description": "Email already registered"},
+        422: {"description": "Validation error (invalid email or weak password)"},
+    },
+)
+def register(user_data: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
+    """
+    Register a new user account.
+
+    Creates a new user with the provided credentials. The password is securely
+    hashed before storage.
+
+    - **name**: User's display name (required, non-empty)
+    - **email**: Valid email address (must be unique)
+    - **password**: Password (minimum 8 characters)
+    """
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(
@@ -42,8 +70,28 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@router.post("/login", response_model=Token)
-def login(credentials: UserLogin, db: Session = Depends(get_db)):
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="Authenticate user",
+    responses={
+        200: {"description": "Successfully authenticated, returns access and refresh tokens"},
+        401: {"description": "Invalid credentials or inactive user"},
+    },
+)
+def login(credentials: UserLogin, db: Session = Depends(get_db)) -> Token:
+    """
+    Authenticate a user and obtain access tokens.
+
+    Validates user credentials and returns JWT access and refresh tokens
+    for authenticated API access.
+
+    - **email**: Registered email address
+    - **password**: User's password
+
+    Returns an access token (short-lived) and refresh token (long-lived).
+    Use the access token in the Authorization header for protected endpoints.
+    """
     user = db.query(User).filter(User.email == credentials.email).first()
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
@@ -74,8 +122,27 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/refresh", response_model=TokenRefresh)
-def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+@router.post(
+    "/refresh",
+    response_model=TokenRefresh,
+    summary="Refresh access token",
+    responses={
+        200: {"description": "Successfully refreshed, returns new access and refresh tokens"},
+        401: {"description": "Invalid, expired, or revoked refresh token"},
+    },
+)
+def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)) -> TokenRefresh:
+    """
+    Obtain a new access token using a refresh token.
+
+    Use this endpoint when the access token has expired. The provided refresh
+    token is revoked and a new token pair is issued.
+
+    - **refresh_token**: Valid, non-expired refresh token from login or previous refresh
+
+    Note: Each refresh token can only be used once. After use, it is revoked
+    and a new refresh token is returned.
+    """
     token_record = db.query(RefreshToken).filter(
         RefreshToken.token == request.refresh_token,
         RefreshToken.revoked == False
@@ -117,17 +184,52 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     return TokenRefresh(access_token=access_token, refresh_token=new_refresh_token_value)
 
 
-@router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get current user profile",
+    responses={
+        200: {"description": "Current user's profile information"},
+        401: {"description": "Not authenticated or invalid token"},
+    },
+)
+def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
+    """
+    Retrieve the current authenticated user's profile.
+
+    Requires a valid access token in the Authorization header.
+
+    Returns the user's profile information including ID, name, email,
+    account status, and creation timestamp.
+    """
     return current_user
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    summary="Logout user",
+    responses={
+        200: {"description": "Successfully logged out"},
+        401: {"description": "Not authenticated or invalid token"},
+    },
+)
 def logout(
     request: RefreshTokenRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, str]:
+    """
+    Log out the current user by revoking their refresh token.
+
+    Requires a valid access token in the Authorization header.
+
+    - **refresh_token**: The refresh token to revoke
+
+    After logout, the refresh token cannot be used to obtain new access tokens.
+    The access token remains valid until it expires, but the user cannot
+    refresh their session.
+    """
     token_record = db.query(RefreshToken).filter(
         RefreshToken.token == request.refresh_token,
         RefreshToken.user_id == current_user.id,

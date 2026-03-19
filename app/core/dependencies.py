@@ -1,3 +1,9 @@
+"""
+FastAPI dependency functions for authentication.
+
+This module provides reusable dependencies for protected API endpoints.
+"""
+
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -8,13 +14,32 @@ from app.database import get_db
 from app.models.user import User
 from app.core.security import decode_access_token
 
-security = HTTPBearer()
+security = HTTPBearer(
+    description="JWT Bearer token authentication. Provide the access token received from login."
+)
 
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
+    """
+    Dependency to get the currently authenticated user.
+
+    Validates the JWT access token from the Authorization header and
+    returns the corresponding user object.
+
+    Args:
+        credentials: HTTP Bearer token from the Authorization header.
+        db: Database session.
+
+    Returns:
+        The authenticated User object.
+
+    Raises:
+        HTTPException: 401 Unauthorized if the token is invalid, expired,
+            or the user is not found/inactive.
+    """
     token = credentials.credentials
     payload = decode_access_token(token)
 
